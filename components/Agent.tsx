@@ -1,6 +1,10 @@
+'use client'
 import React from 'react'
 import Image from 'next/image'
 import { cn } from "@/lib/utils";
+import { useRouter } from 'next/navigation';
+import { useState, useEffect} from 'react';
+import { createFeedback } from '@/lib/actions/general.action';
 
 enum CallStatus {
     INACTIVE = "INACTIVE",
@@ -9,11 +13,84 @@ enum CallStatus {
     FINISHED = "FINISHED"
 }
 
-const Agent = ({ userName }: AgentProps) => {
-    const callStatus = CallStatus.ACTIVE;
-    const isSpeaking = true;
-    const messages = ["Hello, how are you?", "What is your name?"];
-    const lastMessage = messages[messages.length - 1];
+interface SavedMessage{
+    role:'user' | 'assistant' | 'system';
+    content:string;
+}
+
+const Agent = ({ userName,userId,type,interviewId,questions }: AgentProps) => {
+    const router=useRouter();
+    const [isSpeaking, setIsSpeaking] = useState(false);
+    const [callStatus, setCallStatus] = useState<CallStatus>(CallStatus.INACTIVE);
+    const[messages,setMessages]=useState<SavedMessage[]>([]);
+
+    useEffect(()=>{
+        const onCallStart=()=> setCallStatus(CallStatus.ACTIVE);
+        const onCallEnd=()=> setCallStatus(CallStatus.FINISHED);
+        const onMessage=(message:Message)=>{
+            if(message.type==='transcript' && message.transcriptType==='final'){
+                const newMessage={
+                    role: message.role,
+                    content: message.transcript
+                }
+                setMessages(prevMessages => [...prevMessages, newMessage]);
+            }
+        }
+        const onSpeechStart=()=> setIsSpeaking(true);
+        const onSpeechEnd=()=> setIsSpeaking(false);
+        const onError=(error:Error)=>console.error("Error:", error);
+    },[])
+
+    const handleGenerateFeedback=async(messages:SavedMessage[])=>{
+        console.log('Generate feedback here')
+
+        const {success,feedbackId:id}=await createFeedback({
+            interviewId:interviewId!,
+            userId:userId!,
+            transcript:messages
+        })
+        if(success && id){
+            router.push(`/interview/${interviewId}/feedback`)
+        }
+        else{
+            console.log('Error')
+            router.push('/')
+        }
+    }
+
+    useEffect(()=>{
+        if(callStatus===CallStatus.FINISHED){
+            if(type==='generate'){
+                router.push('/')
+            }
+            else{
+                handleGenerateFeedback(messages);
+            }
+        }
+    },[messages,callStatus,type,userId])
+
+    const handleCall=async()=>{
+        setCallStatus(CallStatus.CONNECTING);
+        if(type==='generate'){
+            console.log('First generating questions')
+        }
+        else{
+            let formattedQuestions='';
+            if(questions){
+                formattedQuestions=questions.map((question)=>`-${question}`).join('\n')
+            }
+            //start the interview
+        }
+    }
+
+    const handleDisconnect=async()=>{
+        setCallStatus(CallStatus.FINISHED);
+    }
+
+    const lastestMessage=messages[messages.length - 1]?.content;
+
+    const isCallInactiveOrFinished = callStatus === CallStatus.INACTIVE || callStatus === CallStatus.FINISHED;
+
     return (
         <>
             <div className="call-view">
@@ -49,13 +126,13 @@ const Agent = ({ userName }: AgentProps) => {
                 <div className="transcript-border">
                     <div className="transcript">
                         <p
-                            key={lastMessage}
+                            key={lastestMessage}
                             className={cn(
                                 "transition-opacity duration-500 opacity-0",
                                 "animate-fadeIn opacity-100"
                             )}
                         >
-                            {lastMessage}
+                            {lastestMessage}
                         </p>
                     </div>
                 </div>
@@ -63,7 +140,7 @@ const Agent = ({ userName }: AgentProps) => {
 
             <div className="w-full flex justify-center">
                 {callStatus !== "ACTIVE" ? (
-                    <button className="relative btn-call">
+                    <button className="relative btn-call" onClick={handleCall}>
                         <span
                             className={cn(
                                 "absolute animate-ping rounded-full opacity-75",
@@ -72,13 +149,11 @@ const Agent = ({ userName }: AgentProps) => {
                         />
 
                         <span className="relative">
-                            {callStatus === "INACTIVE" || callStatus === "FINISHED"
-                                ? "Call"
-                                : ". . ."}
+                            {isCallInactiveOrFinished? "Call" : ". . ."}
                         </span>
                     </button>
                 ) : (
-                    <button className="btn-disconnect">
+                    <button className="btn-disconnect" onClick={handleDisconnect}>
                         End
                     </button>
                 )}
