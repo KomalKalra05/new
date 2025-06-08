@@ -9,6 +9,10 @@ import Link from "next/link";
 import { toast } from "sonner";
 import FormField from "./FormField";
 import { useRouter } from "next/navigation";
+import { auth } from "@/firebase/client";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+import { signIn, signUp } from "@/lib/actions/auth.action";
+
 
 const authFormSchema=(type:FormType)=>{
     return z.object({
@@ -29,12 +33,36 @@ const AuthForm = ({ type }: { type: FormType }) => {
             password: ""
         },
     });
-    function onSubmit(values: z.infer<typeof formSchema>) {
+    const onSubmit=async(values: z.infer<typeof formSchema>)=> {
         try{
             if (type === 'sign-in') {
+                const { email, password } = values;
+                const userCredentials=await signInWithEmailAndPassword(auth, email, password);
+                const idToken = await userCredentials.user.getIdToken();
+                if(!idToken){
+                    toast.error("Sign in failed, please try again.");
+                    return;
+                }
+                await signIn({
+                    email,
+                    idToken
+                })
                 toast.success("Sign in successful!");
                 router.push('/');
             } else {
+                const { name, email, password } = values;
+                const userCredentials=await createUserWithEmailAndPassword(auth,email,password);
+                const result=await signUp({
+                    uid: userCredentials.user.uid,
+                    name:name!,
+                    email,
+                    password
+                })
+                console.log(result);
+                if (!result?.success) {
+                    toast.error(result?.message);
+                    return;
+                }
                 toast.success("Account created successfully!");
                 router.push('/sign-in');
             }
